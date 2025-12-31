@@ -48,14 +48,25 @@ function ProfileModal({ onClose, onLogin, onSignup }) {
         <h2>{mode==="login"?"Log In":"Sign Up"}</h2>
         {mode==="signup" && <>
           <input placeholder="Username" value={username} onChange={e=>setUsername(e.target.value)} style={{width:"100%",marginBottom:8}}/>
-          <input type="file" accept="image/png, image/jpeg" onChange={e=>{
-            const file = e.target.files[0];
-            if(file){
-              const reader = new FileReader();
-              reader.onload = ()=> setAvatar(reader.result);
-              reader.readAsDataURL(file);
-            }
-          }} style={{width:"100%",marginBottom:8}}/>
+          <input type="file" accept="image/png, image/jpeg" onChange={(e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setAvatar(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  } catch (err) {
+    console.warn("Avatar upload failed on this device");
+  }
+}}
+
+            
+           style={{width:"100%",marginBottom:8}}/>
         </>}
         <input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} style={{width:"100%",marginBottom:8}}/>
         <input placeholder="Password" type="password" value={password} onChange={e=>setPassword(e.target.value)} style={{width:"100%",marginBottom:8}}/>
@@ -139,6 +150,7 @@ function ContactModal({ onClose }) {
 
 // ------------------ Main Page ------------------
 export default function Page() {
+  const [userInteracted, setUserInteracted] = useState(false);
   const [currentDay,setCurrentDay]=useState(1);
   const [dayOpacity,setDayOpacity]=useState(1);
   const [journal,setJournal]=useState("");
@@ -184,25 +196,59 @@ export default function Page() {
     const savedProfile = JSON.parse(localStorage.getItem("profile"));
     if(savedProfile) setProfile(savedProfile);
 
-    // ------------------ Notifications ------------------
-    if("Notification" in window && Notification.permission!=="granted") Notification.requestPermission();
+    // ------------------ SAFE Notifications ------------------
+if (!("Notification" in window)) return;
+
+Notification.requestPermission()
+  .then(permission => {
+    if (permission !== "granted") return;
+
     const todayDate = new Date();
-    const monthDay = `${todayDate.getMonth()+1}-${todayDate.getDate()}`;
+    const monthDay = `${todayDate.getMonth() + 1}-${todayDate.getDate()}`;
+
     const holidays = {
-      "4-7":"Good Friday",
-      "4-9":"Easter",
-      "12-25":"Christmas"
+      "4-7": "Good Friday",
+      "4-9": "Easter",
+      "12-25": "Christmas",
     };
-    if(holidays[monthDay]){
-      new Notification("Religious Holiday Reminder", {body:`The Bible reminds us the true blessings of ${holidays[monthDay]}`});
-    }
-    if(!localStorage.getItem(`journal-day-${currentDay}`)){
-      new Notification("Daily Journal Reminder", {body:"Don't forget to complete today's Bible journal!"});
+
+    if (holidays[monthDay]) {
+      try {
+        new Notification("Religious Holiday Reminder", {
+          body: `The Bible reminds us the true blessings of ${holidays[monthDay]}`
+        });
+      } catch {}
     }
 
-  },[]);
+    if (!localStorage.getItem(`journal-day-${currentDay}`)) {
+      try {
+        new Notification("Daily Journal Reminder", {
+          body: "Don't forget to complete today's Bible journal!"
+        });
+      } catch {}
+    }
+  })
+  .catch(() => {});
+
+    }
+
+  ,[]);
 
   useEffect(()=>{
+  (() => {
+  if (!userInteracted) return;
+
+  const audio = document.getElementById("backgroundMusic");
+  if (!audio) return;
+
+  try {
+    audio.volume = musicVolume;
+    audio.play();
+  } catch {
+    // Mobile browser may still block — safe to ignore
+  }
+}, [userInteracted, musicVolume]);
+
     if(typeof window==="undefined")return;
     localStorage.setItem("bookmarkedDay",currentDay);
     const savedJournal = localStorage.getItem(`journal-day-${currentDay}`)||"";
@@ -222,13 +268,25 @@ export default function Page() {
   const nextDay=()=>{if(currentDay<365)changeDay(currentDay+1);}
   const prevDay=()=>{if(currentDay>1)changeDay(currentDay-1);}
   const handleJournalChange=(e)=>{const value=e.target.value; setJournal(value); if(typeof window!=="undefined") localStorage.setItem(`journal-day-${currentDay}`,value);}
-  const handleContinueIntro=()=>{
-    if(typeof window==="undefined") return;
-    localStorage.setItem("introSeen","true");
-    setShowIntro(false);
-    const audio=document.getElementById("backgroundMusic");
-    if(audio){ audio.volume=musicVolume; audio.play().catch(err=>console.log("Autoplay prevented",err)); }
+  const handleContinueIntro = () => {
+  if (typeof window === "undefined") return;
+
+  localStorage.setItem("introSeen", "true");
+  setShowIntro(false);
+  setUserInteracted(true);
+
+  const audio = document.getElementById("backgroundMusic");
+  if (!audio) return;
+
+  try {
+    audio.volume = musicVolume;
+    audio.muted = false;
+    audio.play();
+  } catch (err) {
+    console.warn("Audio blocked until further interaction");
   }
+};
+
 
   const handleLogin=(data)=>{
     const saved = JSON.parse(localStorage.getItem("profile"));
